@@ -7,39 +7,41 @@ import {
   Button,
   Typography,
   Container,
+  Paper,
 } from "@mui/material";
 import VocabularyLearning from "./VocabularyLearning";
 import PhrasePractice from "./PhrasePractice";
 import DialogPractice from "./DialogPractice";
 
-const steps = ["Learn Vocabulary", "Practice Phrases", "Master Dialog"];
-
-const LearningModule = ({ scenario, onClose }) => {
+const LearningModule = ({ scenario }) => {
   const [activeStep, setActiveStep] = useState(0);
-  const [completed, setCompleted] = useState({});
+  const [completedSteps, setCompletedSteps] = useState(new Set());
 
-  const handleNext = () => {
-    setActiveStep((prevStep) => prevStep + 1);
+  const steps = [
+    { label: "Learn Vocabulary", description: "Master new words" },
+    { label: "Practice Phrases", description: "Learn common expressions" },
+    { label: "Master Dialogues", description: "Practice real conversations" },
+  ];
+
+  const handleStepComplete = (step) => {
+    const newCompleted = new Set(completedSteps);
+    newCompleted.add(activeStep);
+    setCompletedSteps(newCompleted);
+
+    // Automatically advance to next step after completion
+    if (activeStep < steps.length - 1) {
+      setActiveStep(activeStep + 1);
+    }
   };
 
-  const handleBack = () => {
-    setActiveStep((prevStep) => prevStep - 1);
-  };
-
-  const handleComplete = () => {
-    const newCompleted = { ...completed };
-    newCompleted[activeStep] = true;
-    setCompleted(newCompleted);
-    handleNext();
-  };
-
-  const renderStepContent = () => {
+  const renderCurrentStep = () => {
     switch (activeStep) {
       case 0:
         return (
           <VocabularyLearning
             vocabulary={scenario.data.vocabulary}
-            onComplete={handleComplete}
+            scenarioTitle={scenario.title}
+            onComplete={handleStepComplete}
           />
         );
       case 1:
@@ -47,14 +49,16 @@ const LearningModule = ({ scenario, onClose }) => {
           <PhrasePractice
             phrases={scenario.data.phrases}
             vocabulary={scenario.data.vocabulary}
-            onComplete={handleComplete}
+            onComplete={handleStepComplete}
           />
         );
       case 2:
         return (
           <DialogPractice
-            dialog={scenario.data.dialog}
-            onComplete={handleComplete}
+            dialogues={scenario.data.dialogues}
+            vocabulary={scenario.data.vocabulary}
+            phrases={scenario.data.phrases}
+            onComplete={handleStepComplete}
           />
         );
       default:
@@ -63,55 +67,43 @@ const LearningModule = ({ scenario, onClose }) => {
   };
 
   return (
-    <Container maxWidth="md">
-      <Box sx={{ width: "100%", mt: 4 }}>
-        <Stepper activeStep={activeStep}>
-          {steps.map((label, index) => (
-            <Step key={label} completed={completed[index]}>
-              <StepLabel>{label}</StepLabel>
-            </Step>
-          ))}
-        </Stepper>
+    <Box sx={{ width: "100%", p: 3 }}>
+      <Stepper activeStep={activeStep} alternativeLabel>
+        {steps.map((step, index) => (
+          <Step key={step.label} completed={completedSteps.has(index)}>
+            <StepLabel>
+              <Typography variant="subtitle1">{step.label}</Typography>
+              <Typography variant="caption" color="text.secondary">
+                {step.description}
+              </Typography>
+            </StepLabel>
+          </Step>
+        ))}
+      </Stepper>
 
-        <Box sx={{ mt: 4, mb: 4 }}>
-          {activeStep === steps.length ? (
-            <Box sx={{ textAlign: "center" }}>
-              <Typography variant="h5" gutterBottom>
-                Congratulations! 🎉
-              </Typography>
-              <Typography variant="body1" paragraph>
-                You've completed the {scenario.title} scenario!
-              </Typography>
-              <Button onClick={onClose} variant="contained" color="primary">
-                Back to Scenarios
-              </Button>
-            </Box>
-          ) : (
-            <Box>
-              {renderStepContent()}
-              <Box
-                sx={{ display: "flex", justifyContent: "space-between", mt: 4 }}
-              >
-                <Button
-                  variant="outlined"
-                  disabled={activeStep === 0}
-                  onClick={handleBack}
-                >
-                  Back
-                </Button>
-                <Button
-                  variant="contained"
-                  onClick={handleNext}
-                  disabled={!completed[activeStep]}
-                >
-                  {activeStep === steps.length - 1 ? "Finish" : "Next"}
-                </Button>
-              </Box>
-            </Box>
-          )}
-        </Box>
-      </Box>
-    </Container>
+      <Box sx={{ mt: 4 }}>{renderCurrentStep()}</Box>
+
+      {completedSteps.size === steps.length && (
+        <Paper
+          elevation={3}
+          sx={{
+            p: 3,
+            mt: 4,
+            backgroundColor: "success.light",
+            color: "success.contrastText",
+            textAlign: "center",
+          }}
+        >
+          <Typography variant="h5">
+            Congratulations! You've completed all learning activities for this
+            scenario.
+          </Typography>
+          <Typography variant="subtitle1" sx={{ mt: 1 }}>
+            Keep practicing to maintain your skills!
+          </Typography>
+        </Paper>
+      )}
+    </Box>
   );
 };
 

@@ -1,5 +1,22 @@
 import React, { useState } from "react";
-import { Card, CardContent, Typography, Dialog, Box } from "@mui/material";
+import {
+  Card,
+  CardContent,
+  Typography,
+  Dialog,
+  Box,
+  CardActionArea,
+  Chip,
+  Stack,
+  LinearProgress,
+  IconButton,
+} from "@mui/material";
+import {
+  School as SchoolIcon,
+  Chat as ChatIcon,
+  PlayCircleOutline as PlayIcon,
+  Close as CloseIcon,
+} from "@mui/icons-material";
 import LearningModule from "./LearningModule";
 
 const ScenarioCard = ({ scenario }) => {
@@ -27,40 +44,94 @@ const ScenarioCard = ({ scenario }) => {
     0
   );
 
+  // Format category name
+  const categoryName = (scenario.data.category || "")
+    .split("_")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
+
   return (
     <>
       <Card
-        onClick={handleClick}
         sx={{
-          cursor: "pointer",
           height: "100%",
           display: "flex",
           flexDirection: "column",
           "&:hover": {
             boxShadow: 6,
             transform: "translateY(-4px)",
-            transition: "transform 0.2s ease-in-out",
+            transition: "all 0.2s ease-in-out",
           },
         }}
       >
-        <CardContent>
-          <Typography variant="h5" component="h2" gutterBottom>
-            {scenario.title}
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Category:{" "}
-            {(scenario.data.category || "")
-              .split("_")
-              .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-              .join(" ")}
-          </Typography>
-          <Box sx={{ mt: 2 }}>
-            <Typography variant="body2">{totalWords} words to learn</Typography>
-            <Typography variant="body2">
-              {totalPhrases} useful phrases
-            </Typography>
-          </Box>
-        </CardContent>
+        <CardActionArea onClick={handleClick} sx={{ height: "100%" }}>
+          <CardContent>
+            <Stack spacing={2}>
+              <Typography variant="h5" component="h2" gutterBottom>
+                {scenario.title}
+              </Typography>
+
+              <Box>
+                <Chip
+                  label={categoryName}
+                  size="small"
+                  color="primary"
+                  sx={{ mr: 1 }}
+                />
+              </Box>
+
+              <Box>
+                <Stack direction="row" spacing={2} alignItems="center">
+                  <SchoolIcon color="action" />
+                  <Box sx={{ flex: 1 }}>
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      gutterBottom
+                    >
+                      Vocabulary Progress
+                    </Typography>
+                    <LinearProgress
+                      variant="determinate"
+                      value={0}
+                      sx={{ height: 6, borderRadius: 3 }}
+                    />
+                  </Box>
+                  <Typography variant="body2" color="text.secondary">
+                    {totalWords}
+                  </Typography>
+                </Stack>
+              </Box>
+
+              <Box>
+                <Stack direction="row" spacing={2} alignItems="center">
+                  <ChatIcon color="action" />
+                  <Box sx={{ flex: 1 }}>
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      gutterBottom
+                    >
+                      Phrases Progress
+                    </Typography>
+                    <LinearProgress
+                      variant="determinate"
+                      value={0}
+                      sx={{ height: 6, borderRadius: 3 }}
+                    />
+                  </Box>
+                  <Typography variant="body2" color="text.secondary">
+                    {totalPhrases}
+                  </Typography>
+                </Stack>
+              </Box>
+
+              <Box sx={{ display: "flex", justifyContent: "center", mt: 2 }}>
+                <PlayIcon color="primary" sx={{ fontSize: 40 }} />
+              </Box>
+            </Stack>
+          </CardContent>
+        </CardActionArea>
       </Card>
 
       <Dialog
@@ -72,9 +143,21 @@ const ScenarioCard = ({ scenario }) => {
           sx: {
             minHeight: "80vh",
             maxHeight: "90vh",
+            position: "relative",
           },
         }}
       >
+        <IconButton
+          onClick={handleClose}
+          sx={{
+            position: "absolute",
+            right: 8,
+            top: 8,
+            color: "grey.500",
+          }}
+        >
+          <CloseIcon />
+        </IconButton>
         <LearningModule scenario={scenario} onClose={handleClose} />
       </Dialog>
     </>

@@ -7,203 +7,329 @@ import {
   Button,
   IconButton,
   LinearProgress,
-  Chip,
   Stack,
-  Fade,
+  Paper,
+  Collapse,
+  CircularProgress,
 } from "@mui/material";
 import {
   VolumeUp as VolumeUpIcon,
   Check as CheckIcon,
+  Lightbulb as LightbulbIcon,
+  Translate as TranslateIcon,
 } from "@mui/icons-material";
 
-const PhrasePractice = ({ phrases, vocabulary, onComplete }) => {
-  const [currentCategory, setCurrentCategory] = useState("basic");
+const PhrasePractice = ({ phrases, onComplete }) => {
+  const [currentPhrases, setCurrentPhrases] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [showTranslation, setShowTranslation] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [mastered, setMastered] = useState({
-    basic: [],
-    situational: [],
-    cultural: [],
-  });
-
-  const categories = ["basic", "situational", "cultural"];
-  const currentPhrases = phrases[currentCategory] || [];
+  const [mastered, setMastered] = useState(new Set());
+  const [showTranslation, setShowTranslation] = useState(false);
+  const [showHint, setShowHint] = useState(false);
+  const [loadingAudio, setLoadingAudio] = useState(false);
+  const [aiContent, setAiContent] = useState(null);
+  const [loadingContent, setLoadingContent] = useState(false);
 
   useEffect(() => {
-    // Initialize mastered state for each category
-    const initialMastered = {};
-    categories.forEach((category) => {
-      initialMastered[category] = new Array(
-        phrases[category]?.length || 0
-      ).fill(false);
-    });
-    setMastered(initialMastered);
+    if (phrases) {
+      const allPhrases = Object.entries(phrases).flatMap(
+        ([category, phraseList]) =>
+          phraseList.map((phrase) => ({ phrase, category }))
+      );
+      setCurrentPhrases(allPhrases);
+    }
   }, [phrases]);
 
-  const handleNext = () => {
-    if (currentIndex < currentPhrases.length - 1) {
-      setCurrentIndex((prev) => prev + 1);
-      setShowTranslation(false);
-    } else if (categories.indexOf(currentCategory) < categories.length - 1) {
-      // Move to next category
-      const nextCategory = categories[categories.indexOf(currentCategory) + 1];
-      setCurrentCategory(nextCategory);
-      setCurrentIndex(0);
-      setShowTranslation(false);
+  const fetchAIContent = async (phrase) => {
+    try {
+      setLoadingContent(true);
+      const token = localStorage.getItem("token");
+
+      if (!token) {
+        console.warn("No authentication token found");
+        setAiContent({
+          translation: "Translation not available",
+          examples: [],
+          grammarNotes: "",
+          culturalNotes: "",
+        });
+        return;
+      }
+
+      const response = await fetch(
+        "http://localhost:5001/api/vocabulary/generate",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ text: phrase, type: "sentence" }),
+        }
+      );
+
+      if (response.status === 401 || response.status === 403) {
+        console.warn("Authentication failed, using fallback content");
+        setAiContent({
+          translation: "Translation not available",
+          examples: [],
+          grammarNotes: "",
+          culturalNotes: "",
+        });
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error(
+          `Failed to fetch AI content: ${response.status} ${response.statusText}`
+        );
+      }
+
+      const data = await response.json();
+      if (data.status === "success" && data.data) {
+        setAiContent(data.data);
+      } else {
+        setAiContent({
+          translation: "Translation not available",
+          examples: [],
+          grammarNotes: "",
+          culturalNotes: "",
+        });
+      }
+    } catch (error) {
+      console.error("Error fetching AI content:", error);
+      setAiContent({
+        translation: "Translation not available",
+        examples: [],
+        grammarNotes: "",
+        culturalNotes: "",
+      });
+    } finally {
+      setLoadingContent(false);
     }
-    updateProgress();
   };
 
-  const handlePrevious = () => {
-    if (currentIndex > 0) {
-      setCurrentIndex((prev) => prev - 1);
-      setShowTranslation(false);
-    } else if (categories.indexOf(currentCategory) > 0) {
-      // Move to previous category
-      const prevCategory = categories[categories.indexOf(currentCategory) - 1];
-      setCurrentCategory(prevCategory);
-      setCurrentIndex(phrases[prevCategory].length - 1);
-      setShowTranslation(false);
+  useEffect(() => {
+    if (currentPhrases.length > 0 && currentIndex < currentPhrases.length) {
+      fetchAIContent(currentPhrases[currentIndex].phrase);
+    }
+  }, [currentIndex, currentPhrases]);
+
+  const speakPhrase = async (phrase) => {
+    try {
+      setLoadingAudio(true);
+      const response = await fetch("http://localhost:5001/api/vocabulary/tts", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${localStorage.getItem("token")}`,
+        },
+        body: JSON.stringify({ text: phrase }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch audio");
+      }
+
+      const audioBlob = await response.blob();
+      const audioUrl = URL.createObjectURL(audioBlob);
+      const audio = new Audio(audioUrl);
+      await audio.play();
+
+      audio.onended = () => {
+        URL.revokeObjectURL(audioUrl);
+      };
+    } catch (error) {
+      console.error("TTS Error:", error);
+      const utterance = new SpeechSynthesisUtterance(phrase);
+      utterance.lang = "en-US";
+      window.speechSynthesis.speak(utterance);
+    } finally {
+      setLoadingAudio(false);
     }
   };
 
   const handleMastered = () => {
-    const newMastered = { ...mastered };
-    newMastered[currentCategory][currentIndex] = true;
+    const newMastered = new Set(mastered);
+    newMastered.add(currentIndex);
     setMastered(newMastered);
-    handleNext();
+    setProgress((newMastered.size / currentPhrases.length) * 100);
 
-    // Check if all phrases are mastered
-    const allMastered = Object.values(newMastered).every((categoryMastered) =>
-      categoryMastered.every(Boolean)
-    );
-    if (allMastered) {
-      onComplete();
+    if (newMastered.size === currentPhrases.length) {
+      onComplete?.();
+    } else {
+      handleNext();
     }
   };
 
-  const updateProgress = () => {
-    const totalPhrases = Object.values(phrases).reduce(
-      (sum, category) => sum + category.length,
-      0
-    );
-    const masteredCount = Object.values(mastered).reduce(
-      (sum, category) => sum + category.filter(Boolean).length,
-      0
-    );
-    const newProgress = (masteredCount / totalPhrases) * 100;
-    setProgress(newProgress);
+  const handleNext = () => {
+    if (currentIndex < currentPhrases.length - 1) {
+      setCurrentIndex(currentIndex + 1);
+      setShowTranslation(false);
+      setShowHint(false);
+    }
   };
 
-  const speakPhrase = (phrase) => {
-    const utterance = new SpeechSynthesisUtterance(phrase);
-    utterance.lang = "en-US";
-    window.speechSynthesis.speak(utterance);
-  };
+  if (!currentPhrases.length || currentIndex >= currentPhrases.length)
+    return null;
 
   const currentPhrase = currentPhrases[currentIndex];
 
   return (
     <Box>
       <Box sx={{ mb: 4 }}>
-        <Typography variant="h4" gutterBottom>
-          Practice Phrases
-        </Typography>
-        <LinearProgress variant="determinate" value={progress} sx={{ mb: 2 }} />
-        <Typography variant="body2" color="text.secondary" gutterBottom>
-          {Math.round(progress)}% Mastered
-        </Typography>
-        <Stack direction="row" spacing={1} sx={{ mb: 2 }}>
-          {categories.map((category) => (
-            <Chip
-              key={category}
-              label={category.charAt(0).toUpperCase() + category.slice(1)}
-              color={category === currentCategory ? "primary" : "default"}
-              onClick={() => {
-                setCurrentCategory(category);
-                setCurrentIndex(0);
-                setShowTranslation(false);
-              }}
-            />
-          ))}
+        <Stack direction="row" alignItems="center" spacing={2} sx={{ mb: 2 }}>
+          <Typography variant="h4">Practice Phrases</Typography>
+          <Typography variant="subtitle1" color="text.secondary">
+            {Math.round(progress)}% Complete
+          </Typography>
         </Stack>
+        <LinearProgress variant="determinate" value={progress} />
       </Box>
 
-      {currentPhrase && (
-        <Card sx={{ minHeight: 300 }}>
-          <CardContent>
-            <Box sx={{ textAlign: "center" }}>
-              <Typography variant="h5" gutterBottom>
-                {currentPhrase.phrase}
-                <IconButton
-                  onClick={() => speakPhrase(currentPhrase.phrase)}
-                  size="large"
-                >
-                  <VolumeUpIcon />
-                </IconButton>
-              </Typography>
+      <Card>
+        <CardContent>
+          <Box sx={{ textAlign: "center" }}>
+            <Typography variant="overline" display="block" gutterBottom>
+              {currentPhrase.category}
+            </Typography>
 
-              {showTranslation && (
-                <Fade in={showTranslation}>
+            <Stack
+              direction="row"
+              spacing={2}
+              justifyContent="center"
+              alignItems="center"
+            >
+              <Typography variant="h5">{currentPhrase.phrase}</Typography>
+              <IconButton
+                onClick={() => speakPhrase(currentPhrase.phrase)}
+                disabled={loadingAudio}
+              >
+                {loadingAudio ? (
+                  <CircularProgress size={24} />
+                ) : (
+                  <VolumeUpIcon />
+                )}
+              </IconButton>
+            </Stack>
+
+            <Collapse in={showTranslation}>
+              <Paper
+                elevation={3}
+                sx={{ p: 2, mt: 2, bgcolor: "secondary.light" }}
+              >
+                {loadingContent ? (
+                  <CircularProgress size={20} />
+                ) : (
+                  <Typography variant="h6" color="secondary.contrastText">
+                    {aiContent?.translation || "Translation not available"}
+                  </Typography>
+                )}
+              </Paper>
+            </Collapse>
+
+            <Collapse in={showHint}>
+              <Paper
+                elevation={3}
+                sx={{ p: 2, mt: 2, bgcolor: "primary.light" }}
+              >
+                {loadingContent ? (
+                  <CircularProgress size={20} />
+                ) : (
                   <Box>
                     <Typography
                       variant="h6"
-                      color="text.secondary"
                       gutterBottom
+                      color="primary.contrastText"
                     >
-                      {currentPhrase.translation}
+                      Similar Examples:
                     </Typography>
-                    {currentPhrase.context && (
-                      <Typography variant="body2" color="text.secondary">
-                        Context: {currentPhrase.context}
+                    {aiContent?.examples?.map((example, index) => (
+                      <Typography
+                        key={index}
+                        variant="body1"
+                        color="primary.contrastText"
+                        paragraph
+                      >
+                        • {example}
                       </Typography>
+                    ))}
+
+                    {aiContent?.grammarNotes && (
+                      <>
+                        <Typography
+                          variant="h6"
+                          gutterBottom
+                          color="primary.contrastText"
+                          sx={{ mt: 2 }}
+                        >
+                          Grammar Notes:
+                        </Typography>
+                        <Typography
+                          variant="body1"
+                          color="primary.contrastText"
+                          paragraph
+                        >
+                          {aiContent.grammarNotes}
+                        </Typography>
+                      </>
+                    )}
+
+                    {aiContent?.culturalNotes && (
+                      <>
+                        <Typography
+                          variant="h6"
+                          gutterBottom
+                          color="primary.contrastText"
+                          sx={{ mt: 2 }}
+                        >
+                          Cultural Context:
+                        </Typography>
+                        <Typography
+                          variant="body1"
+                          color="primary.contrastText"
+                        >
+                          {aiContent.culturalNotes}
+                        </Typography>
+                      </>
                     )}
                   </Box>
-                </Fade>
-              )}
+                )}
+              </Paper>
+            </Collapse>
 
-              <Box sx={{ mt: 4 }}>
-                <Button
-                  variant="outlined"
-                  onClick={() => setShowTranslation(!showTranslation)}
-                  sx={{ mr: 2 }}
-                >
-                  {showTranslation ? "Hide" : "Show"} Translation
-                </Button>
-                <Button
-                  variant="contained"
-                  color="success"
-                  onClick={handleMastered}
-                  startIcon={<CheckIcon />}
-                >
-                  I Know This
-                </Button>
-              </Box>
-            </Box>
-          </CardContent>
-        </Card>
-      )}
-
-      <Box sx={{ display: "flex", justifyContent: "space-between", mt: 4 }}>
-        <Button
-          variant="outlined"
-          onClick={handlePrevious}
-          disabled={currentIndex === 0 && currentCategory === categories[0]}
-        >
-          Previous
-        </Button>
-        <Button
-          variant="outlined"
-          onClick={handleNext}
-          disabled={
-            currentIndex === currentPhrases.length - 1 &&
-            currentCategory === categories[categories.length - 1]
-          }
-        >
-          Next
-        </Button>
-      </Box>
+            <Stack
+              direction="row"
+              spacing={2}
+              justifyContent="center"
+              sx={{ mt: 4 }}
+            >
+              <Button
+                variant="outlined"
+                onClick={() => setShowTranslation(!showTranslation)}
+                startIcon={<TranslateIcon />}
+              >
+                {showTranslation ? "Hide Translation" : "Show Translation"}
+              </Button>
+              <Button
+                variant="outlined"
+                onClick={() => setShowHint(!showHint)}
+                startIcon={<LightbulbIcon />}
+              >
+                {showHint ? "Hide Hint" : "Show Hint"}
+              </Button>
+              <Button
+                variant="contained"
+                color="success"
+                onClick={handleMastered}
+                startIcon={<CheckIcon />}
+              >
+                I Know This
+              </Button>
+            </Stack>
+          </Box>
+        </CardContent>
+      </Card>
     </Box>
   );
 };

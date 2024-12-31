@@ -3917,4 +3917,69 @@ router.post("/tts", auth, async (req, res) => {
   }
 });
 
+// Add new endpoint for AI-generated examples and translations
+router.post("/generate", auth, async (req, res) => {
+  try {
+    const { text, type } = req.body;
+
+    if (!text) {
+      return res.status(400).json({
+        status: "error",
+        message: "Text is required",
+      });
+    }
+
+    // Use Gemini to generate examples and translations
+    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+
+    const prompt =
+      type === "word"
+        ? `For the English word "${text}", provide:
+      1. Turkish translation
+      2. Three natural example sentences using this word
+      3. Common collocations
+      4. Usage notes (if any)
+      Return ONLY a JSON object with these fields: translation, examples (array), collocations (array), usageNotes (string). Do not include markdown formatting, code blocks, or any other text.`
+        : `For the English sentence "${text}", provide:
+      1. Turkish translation
+      2. Two similar example sentences
+      3. Grammar notes
+      4. Cultural context (if relevant)
+      Return ONLY a JSON object with these fields: translation, examples (array), grammarNotes (string), culturalNotes (string). Do not include markdown formatting, code blocks, or any other text.`;
+
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const generatedText = response.text();
+
+    try {
+      // Remove any markdown formatting or code blocks
+      const cleanJson = generatedText
+        .replace(/```json\n?/g, "")
+        .replace(/```\n?/g, "")
+        .trim();
+
+      const data = JSON.parse(cleanJson);
+      return res.json({
+        status: "success",
+        data,
+      });
+    } catch (parseError) {
+      console.error("Error parsing AI response:", parseError);
+      console.error("Raw AI response:", generatedText);
+      return res.status(500).json({
+        status: "error",
+        message: "Error processing AI response",
+        error: parseError.message,
+      });
+    }
+  } catch (error) {
+    console.error("Error generating content:", error);
+    return res.status(500).json({
+      status: "error",
+      message: "Error generating content",
+      error: error.message,
+    });
+  }
+});
+
 module.exports = router;
